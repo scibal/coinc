@@ -1,0 +1,257 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>数据统计页面</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            margin: 20px;
+        }
+        .data-group {
+            margin-bottom: 20px;
+        }
+        .data-row {
+            display: flex;
+            margin-bottom: 10px;
+        }
+        .data-cell {
+            margin-right: 10px;
+        }
+        input {
+            width: 50px;
+            padding: 5px;
+        }
+        .ratio-row {
+            display: flex;
+            flex-wrap: wrap;
+            margin-top: 20px;
+        }
+        .ratio-item {
+            margin-right: 15px;
+            font-weight: bold;
+        }
+        .sum {
+            font-weight: bold;
+            margin-left: 10px;
+            color: blue;
+        }
+        h2 {
+            color: #333;
+            border-bottom: 1px solid #ccc;
+            padding-bottom: 5px;
+        }
+        #chart-container {
+            width: 800px;
+            height: 400px;
+            margin-top: 30px;
+        }
+    </style>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+</head>
+<body>
+    <h1>数据统计</h1>
+    
+    <div class="data-group">
+        <h2>次数</h2>
+        <div class="data-row" id="count-row1">
+            <!-- 前9个输入框 -->
+        </div>
+        <div class="data-row" id="count-row2">
+            <!-- 后9个输入框 -->
+        </div>
+        <div>总和: <span id="count-sum" class="sum">0</span></div>
+    </div>
+    
+    <div class="data-group">
+        <h2>正面朝上的次数</h2>
+        <div class="data-row" id="faceup-row1">
+            <!-- 前9个输入框 -->
+        </div>
+        <div class="data-row" id="faceup-row2">
+            <!-- 后9个输入框 -->
+        </div>
+        <div>总和: <span id="faceup-sum" class="sum">0</span></div>
+    </div>
+    
+    <div class="data-group">
+        <h2>比值 (正面朝上/次数)</h2>
+        <div class="ratio-row" id="ratio-row">
+            <!-- 比值将在这里显示 -->
+        </div>
+    </div>
+
+    <div id="chart-container">
+        <canvas id="ratioChart"></canvas>
+    </div>
+
+    <script>
+        let ratioChart = null;
+        
+        // 创建输入框
+        function createInputs() {
+            // 创建次数输入框 (第一组数据)
+            for (let i = 0; i < 18; i++) {
+                const input = document.createElement('input');
+                input.type = 'number';
+                input.min = '1';
+                input.max = '20';
+                input.value = '1';
+                input.dataset.index = i;
+                input.className = 'count-input';
+                input.addEventListener('focus', function() {
+                    this.value = '20';
+                    calculateSums();
+                });
+                input.addEventListener('input', calculateSums);
+                
+                if (i < 9) {
+                    document.getElementById('count-row1').appendChild(createInputCell(input, i));
+                } else {
+                    document.getElementById('count-row2').appendChild(createInputCell(input, i));
+                }
+            }
+            
+            // 创建正面朝上次数输入框 (第二组数据)
+            for (let i = 0; i < 18; i++) {
+                const input = document.createElement('input');
+                input.type = 'number';
+                input.min = '1';
+                input.max = '20';
+                input.value = '1';
+                input.dataset.index = i;
+                input.className = 'faceup-input';
+                input.addEventListener('input', calculateSums);
+                
+                if (i < 9) {
+                    document.getElementById('faceup-row1').appendChild(createInputCell(input, i));
+                } else {
+                    document.getElementById('faceup-row2').appendChild(createInputCell(input, i));
+                }
+            }
+        }
+        
+        // 创建输入框单元格
+        function createInputCell(input, index) {
+            const cell = document.createElement('div');
+            cell.className = 'data-cell';
+            const label = document.createElement('span');
+            label.textContent = `${index + 1}: `;
+            cell.appendChild(label);
+            cell.appendChild(input);
+            return cell;
+        }
+        
+        // 计算总和和比值
+        function calculateSums() {
+            // 计算次数总和 (第一组数据)
+            const countInputs = document.querySelectorAll('.count-input');
+            let countSum = 0;
+            countInputs.forEach(input => {
+                let value = parseInt(input.value) || 0;
+                if (value < 1) value = 1;
+                if (value > 20) value = 20;
+                input.value = value;
+                countSum += value;
+            });
+            document.getElementById('count-sum').textContent = countSum;
+            
+            // 计算正面朝上总和 (第二组数据)
+            const faceupInputs = document.querySelectorAll('.faceup-input');
+            let faceupSum = 0;
+            let cumulativeSums = [];
+            let currentSum = 0;
+            
+            faceupInputs.forEach((input, index) => {
+                let value = parseInt(input.value) || 0;
+                if (value < 1) value = 1;
+                if (value > 20) value = 20;
+                input.value = value;
+                currentSum += value;
+                cumulativeSums.push(currentSum);
+            });
+            
+            faceupSum = currentSum;
+            document.getElementById('faceup-sum').textContent = faceupSum;
+            
+            // 计算并显示比值
+            calculateRatios(cumulativeSums);
+        }
+        
+        // 计算比值
+        function calculateRatios(cumulativeSums) {
+            const ratioRow = document.getElementById('ratio-row');
+            ratioRow.innerHTML = '';
+            
+            const ratios = [];
+            
+            for (let i = 0; i < 18; i++) {
+                const n = i + 1; // 数据个数
+                const denominator = n * 20; // 分母是数据个数×20
+                const ratio = (cumulativeSums[i] / denominator).toFixed(4);
+                ratios.push(ratio);
+                
+                const ratioItem = document.createElement('div');
+                ratioItem.className = 'ratio-item';
+                ratioItem.textContent = `${i + 1}: ${ratio}`;
+                ratioRow.appendChild(ratioItem);
+            }
+            
+            // 更新折线图
+            updateChart(ratios);
+        }
+        
+        // 更新折线图
+        function updateChart(ratios) {
+            const ctx = document.getElementById('ratioChart').getContext('2d');
+            const labels = Array.from({length: 18}, (_, i) => (i + 1) * 20);
+            
+            if (ratioChart) {
+                ratioChart.data.labels = labels;
+                ratioChart.data.datasets[0].data = ratios;
+                ratioChart.update();
+            } else {
+                ratioChart = new Chart(ctx, {
+                    type: 'line',
+                    data: {
+                        labels: labels,
+                        datasets: [{
+                            label: '比值 (正面朝上和/数据个数×20)',
+                            data: ratios,
+                            borderColor: 'rgb(75, 192, 192)',
+                            tension: 0.1,
+                            fill: false
+                        }]
+                    },
+                    options: {
+                        responsive: true,
+                        scales: {
+                            x: {
+                                title: {
+                                    display: true,
+                                    text: '数据个数×20'
+                                }
+                            },
+                            y: {
+                                title: {
+                                    display: true,
+                                    text: '比值'
+                                },
+                                min: 0,
+                                max: 1
+                            }
+                        }
+                    }
+                });
+            }
+        }
+        
+        // 初始化页面
+        window.onload = function() {
+            createInputs();
+            calculateSums();
+        };
+    </script>
+</body>
+</html>
